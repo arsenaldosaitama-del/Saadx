@@ -1,0 +1,932 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- ============================================
+-- 🔑 SISTEMA DE KEY COMPLETO
+-- ============================================
+
+local KeysValidas = {
+    ["SAADX-78WB9UG4KTQWTUX0"] = "16/08/2026",
+    ["SAADX-72MMNHXRM4TJSAVY"] = "17/08/2026",
+    ["SAADX-HRWE2MWTQ7ZOPLV9"] = "09/09/2026",
+    ["SAADX-ZD6IVYJXGDENJNL1"] = "18/08/2026",
+    ["SAADX-4UG9JXBCV2FRK0II"] = "10/09/2026",
+    ["SAADX-ZJF1FBMUAH1T6E9J"] = "14/08/2026",
+    ["SAADX-15BRONJMNJBFGJGU"] = "14/08/2026",
+    ["SAADX-U3OBE1QTHSA7WIEC"] = "16/08/2026",
+}
+
+local keyValidada = false
+local LocalPlayer = game.Players.LocalPlayer
+
+local function verificarKey(key)
+    local expira = KeysValidas[key]
+    if not expira then return false, "❌ KEY INVÁLIDA!" end
+    
+    local dia, mes, ano = expira:match("(%d+)/(%d+)/(%d+)")
+    if dia and mes and ano then
+        dia, mes, ano = tonumber(dia), tonumber(mes), tonumber(ano)
+        local t = os.date("*t")
+        if not (ano > t.year or (ano == t.year and mes > t.month) or (ano == t.year and mes == t.month and dia >= t.day)) then
+            return false, "❌ KEY EXPIRADA! (Expirou em " .. expira .. ")"
+        end
+    end
+    return true, "✅ KEY VÁLIDA! Bem-vindo ao Saadx XIT!"
+end
+
+-- ============================================
+-- 📋 MENU PRINCIPAL (DEFINIDO PRIMEIRO)
+-- ============================================
+local function criarMenu()
+    local Window = Rayfield:CreateWindow({
+        Name = "SaadXit | discord.gg/GSWQ3PzTHj",
+        LoadingTitle = "SaadXit",
+        LoadingSubtitle = "By SaadXit Team",
+        ConfigurationSaving = {
+            Enabled = true,
+            FolderName = "SaadxXIT",
+            FileName = "Configuracoes"
+        },
+        Discord = {
+            Enabled = false,
+            Invite = "noinvite",
+            RememberJoins = true
+        },
+        KeySystem = false,
+        KeySettings = {
+            Title = "Untitled",
+            Subtitle = "Key System",
+            Note = "No key system",
+            FileName = "Key",
+            SaveKey = false,
+            GrabKeyFromSite = false
+        }
+    })
+
+    local PVPTab = Window:CreateTab("PVP", 4483362458)
+    local PlayerTab = Window:CreateTab("Player", 4483362458)
+    local MiscTab = Window:CreateTab("Misc", 4483362458)
+
+    local PVPSection = PVPTab:CreateSection("Combate")
+
+    -- Configurações
+    local Settings = {
+        Aimbot = false,
+        ShowFOV = false,
+        FOVSize = 140,
+        Smoothness = 1,
+        SpeedBoost = false,
+        SpeedValue = 16,
+        CornerBox = false,
+        HealthBar = false
+    }
+
+    local Player = game.Players.LocalPlayer
+    local Camera = workspace.CurrentCamera
+    local RunService = game:GetService("RunService")
+
+    -- Variáveis do FOV 2D
+    local FOVCircle = nil
+    local FOVRadius = Settings.FOVSize
+
+    -- Variáveis do Corner Box e Health Bar
+    local CornerBoxes = {}
+    local HealthBars = {}
+
+    -- DECLARAÇÃO ANTECIPADA das funções de ESP
+    local RemoveESPObjects
+    local CreateESPObjects
+    local ClearAllESP
+    local UpdateAllESP
+
+    -- Criar círculo FOV 2D
+    local function CreateFOVCircle()
+        if FOVCircle then
+            FOVCircle:Remove()
+            FOVCircle = nil
+        end
+        
+        FOVCircle = Drawing.new("Circle")
+        FOVCircle.Thickness = 1
+        FOVCircle.Color = Color3.fromRGB(255, 0, 0)
+        FOVCircle.Filled = false
+        FOVCircle.Visible = Settings.ShowFOV
+        FOVCircle.Radius = FOVRadius
+        FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        FOVCircle.ZIndex = 10
+        
+        return FOVCircle
+    end
+
+    -- Atualizar posição do círculo FOV (centralizado na tela)
+    local function UpdateFOVPosition()
+        if FOVCircle then
+            FOVCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        end
+    end
+
+    -- Atualizar visibilidade do FOV
+    local function UpdateFOVVisibility()
+        if FOVCircle then
+            FOVCircle.Visible = Settings.ShowFOV
+        end
+    end
+
+    -- Atualizar raio do FOV
+    local function UpdateFOVRadius()
+        if FOVCircle then
+            FOVCircle.Radius = Settings.FOVSize
+            FOVRadius = Settings.FOVSize
+        end
+    end
+
+    -- Converter posição 3D para coordenadas 2D na tela
+    local function WorldToScreen(WorldPosition)
+        if not WorldPosition then return nil end
+        
+        local ScreenPos, OnScreen = Camera:WorldToScreenPoint(WorldPosition)
+        if not OnScreen then return nil end
+        
+        local CameraPos = Camera.CFrame.Position
+        local Direction = (WorldPosition - CameraPos).Unit
+        local LookDirection = Camera.CFrame.LookVector
+        
+        if Direction:Dot(LookDirection) < 0 then
+            return nil
+        end
+        
+        return Vector2.new(ScreenPos.X, ScreenPos.Y)
+    end
+
+    -- Verificar se alvo está dentro do FOV
+    local function IsTargetInFOV(TargetPosition)
+        if not TargetPosition then return false end
+        
+        local ScreenPos = WorldToScreen(TargetPosition)
+        if not ScreenPos then return false end
+        
+        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        local Distance = (ScreenPos - Center).Magnitude
+        
+        return Distance <= FOVRadius
+    end
+
+    -- Calcular distância do centro do FOV
+    local function GetDistanceFromFOVCenter(TargetPosition)
+        if not TargetPosition then return math.huge end
+        
+        local ScreenPos = WorldToScreen(TargetPosition)
+        if not ScreenPos then return math.huge end
+        
+        local Center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        return (ScreenPos - Center).Magnitude
+    end
+
+    -- Encontrar o melhor alvo
+    local function FindBestTarget()
+        if not Settings.Aimbot then return nil end
+        
+        local Character = Player.Character
+        if not Character or not Character:FindFirstChild("Head") then return nil end
+        
+        local BestTarget = nil
+        local BestDistance = math.huge
+        
+        for _, Target in ipairs(game.Players:GetPlayers()) do
+            if Target ~= Player then
+                local TargetHead = Target.Character and Target.Character:FindFirstChild("Head")
+                local TargetHumanoid = Target.Character and Target.Character:FindFirstChild("Humanoid")
+                
+                if TargetHead and TargetHumanoid and TargetHumanoid.Health > 0 then
+                    local TargetPos = TargetHead.Position
+                    
+                    if IsTargetInFOV(TargetPos) then
+                        local Distance = GetDistanceFromFOVCenter(TargetPos)
+                        if Distance < BestDistance then
+                            BestDistance = Distance
+                            BestTarget = Target
+                        end
+                    end
+                end
+            end
+        end
+        
+        return BestTarget
+    end
+
+    -- Aplicar suavidade ao movimento da câmera
+    local function ApplySmoothness(TargetCFrame)
+        if not TargetCFrame then return end
+        
+        local SmoothFactor = math.clamp(Settings.Smoothness / 10, 0.1, 1)
+        local CurrentCFrame = Camera.CFrame
+        local SmoothCFrame = CurrentCFrame:Lerp(TargetCFrame, SmoothFactor)
+        
+        Camera.CFrame = SmoothCFrame
+    end
+
+    -- Lógica principal do Aimbot
+    local function AimbotLogic()
+        if not Settings.Aimbot then return end
+        
+        local Character = Player.Character
+        if not Character or not Character:FindFirstChild("Humanoid") or Character.Humanoid.Health <= 0 then
+            return
+        end
+        
+        local Target = FindBestTarget()
+        if not Target then return end
+        
+        local TargetHead = Target.Character and Target.Character:FindFirstChild("Head")
+        if not TargetHead then return end
+        
+        local TargetPos = TargetHead.Position
+        local ScreenPos = WorldToScreen(TargetPos)
+        if not ScreenPos then return end
+        
+        local CameraPos = Camera.CFrame.Position
+        local LookVector = (TargetPos - CameraPos).Unit
+        local TargetCFrame = CFrame.new(CameraPos, CameraPos + LookVector)
+        
+        ApplySmoothness(TargetCFrame)
+    end
+
+    -- Função para aplicar velocidade
+    local function ApplySpeed()
+        local Character = Player.Character
+        if not Character then return end
+        
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        if not Humanoid then return end
+        
+        if Settings.SpeedBoost then
+            Humanoid.WalkSpeed = Settings.SpeedValue
+        else
+            Humanoid.WalkSpeed = 16
+        end
+    end
+
+    -- DEFINIÇÃO DAS FUNÇÕES DE ESP
+
+    RemoveESPObjects = function(player)
+        if not player then return end
+        
+        if CornerBoxes[player] then
+            for _, line in ipairs(CornerBoxes[player]) do
+                if line then
+                    line:Remove()
+                end
+            end
+            CornerBoxes[player] = nil
+        end
+        
+        if HealthBars[player] then
+            for _, line in ipairs(HealthBars[player]) do
+                if line then
+                    line:Remove()
+                end
+            end
+            HealthBars[player] = nil
+        end
+    end
+
+    CreateESPObjects = function(player)
+        if not player or player == Player then return end
+        
+        RemoveESPObjects(player)
+        
+        local Corners = {}
+        for i = 1, 8 do
+            local Line = Drawing.new("Line")
+            Line.From = Vector2.new(0, 0)
+            Line.To = Vector2.new(0, 0)
+            Line.Color = Color3.fromRGB(255, 255, 255)
+            Line.Thickness = 2
+            Line.Visible = false
+            Line.ZIndex = 5
+            table.insert(Corners, Line)
+        end
+        CornerBoxes[player] = Corners
+        
+        local HealthObjects = {}
+        
+        local Background = Drawing.new("Line")
+        Background.From = Vector2.new(0, 0)
+        Background.To = Vector2.new(0, 0)
+        Background.Color = Color3.fromRGB(0, 0, 0)
+        Background.Thickness = 4
+        Background.Visible = false
+        Background.ZIndex = 5
+        table.insert(HealthObjects, Background)
+        
+        local Fill = Drawing.new("Line")
+        Fill.From = Vector2.new(0, 0)
+        Fill.To = Vector2.new(0, 0)
+        Fill.Color = Color3.fromRGB(0, 255, 0)
+        Fill.Thickness = 2
+        Fill.Visible = false
+        Fill.ZIndex = 6
+        table.insert(HealthObjects, Fill)
+        
+        HealthBars[player] = HealthObjects
+    end
+
+    ClearAllESP = function()
+        for player, _ in pairs(CornerBoxes) do
+            RemoveESPObjects(player)
+        end
+    end
+
+    local function GetCharacterBoundingBox(character)
+        if not character then return nil end
+        
+        local Humanoid = character:FindFirstChild("Humanoid")
+        if not Humanoid or Humanoid.Health <= 0 then return nil end
+        
+        local parts = {}
+        for _, part in ipairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                table.insert(parts, part)
+            end
+        end
+        
+        if #parts == 0 then return nil end
+        
+        local minX, maxX = math.huge, -math.huge
+        local minY, maxY = math.huge, -math.huge
+        local minZ, maxZ = math.huge, -math.huge
+        
+        for _, part in ipairs(parts) do
+            local Size = part.Size
+            local Position = part.Position
+            local Right = part.CFrame.RightVector * (Size.X / 2)
+            local Up = part.CFrame.UpVector * (Size.Y / 2)
+            local Back = part.CFrame.LookVector * (Size.Z / 2)
+            
+            local vertices = {
+                Position + Right + Up + Back,
+                Position + Right + Up - Back,
+                Position + Right - Up + Back,
+                Position + Right - Up - Back,
+                Position - Right + Up + Back,
+                Position - Right + Up - Back,
+                Position - Right - Up + Back,
+                Position - Right - Up - Back
+            }
+            
+            for _, vertex in ipairs(vertices) do
+                local ScreenPos, OnScreen = Camera:WorldToViewportPoint(vertex)
+                if OnScreen then
+                    minX = math.min(minX, ScreenPos.X)
+                    maxX = math.max(maxX, ScreenPos.X)
+                    minY = math.min(minY, ScreenPos.Y)
+                    maxY = math.max(maxY, ScreenPos.Y)
+                    minZ = math.min(minZ, ScreenPos.Z)
+                    maxZ = math.max(maxZ, ScreenPos.Z)
+                end
+            end
+        end
+        
+        if minX == math.huge or maxX == -math.huge then
+            return nil
+        end
+        
+        local margin = 5
+        
+        return {
+            Left = minX - margin,
+            Right = maxX + margin,
+            Top = minY - margin,
+            Bottom = maxY + margin,
+            DepthMin = minZ,
+            DepthMax = maxZ
+        }
+    end
+
+    UpdateAllESP = function()
+        for _, player in ipairs(game.Players:GetPlayers()) do
+            if player ~= Player then
+                if not CornerBoxes[player] and not HealthBars[player] then
+                    if Settings.CornerBox or Settings.HealthBar then
+                        CreateESPObjects(player)
+                    end
+                end
+            end
+        end
+        
+        for player, lines in pairs(CornerBoxes) do
+            if not player or not player.Character then
+                RemoveESPObjects(player)
+                continue
+            end
+            
+            local Character = player.Character
+            local Humanoid = Character:FindFirstChild("Humanoid")
+            
+            if not Humanoid or Humanoid.Health <= 0 then
+                for _, line in ipairs(lines) do
+                    line.Visible = false
+                end
+                if HealthBars[player] then
+                    for _, line in ipairs(HealthBars[player]) do
+                        line.Visible = false
+                    end
+                end
+                continue
+            end
+            
+            local bbox = GetCharacterBoundingBox(Character)
+            if not bbox then
+                for _, line in ipairs(lines) do
+                    line.Visible = false
+                end
+                if HealthBars[player] then
+                    for _, line in ipairs(HealthBars[player]) do
+                        line.Visible = false
+                    end
+                end
+                continue
+            end
+            
+            if bbox.DepthMax < 0 then
+                for _, line in ipairs(lines) do
+                    line.Visible = false
+                end
+                if HealthBars[player] then
+                    for _, line in ipairs(HealthBars[player]) do
+                        line.Visible = false
+                    end
+                end
+                continue
+            end
+            
+            local ViewportSize = Camera.ViewportSize
+            if bbox.Right < 0 or bbox.Left > ViewportSize.X or bbox.Bottom < 0 or bbox.Top > ViewportSize.Y then
+                for _, line in ipairs(lines) do
+                    line.Visible = false
+                end
+                if HealthBars[player] then
+                    for _, line in ipairs(HealthBars[player]) do
+                        line.Visible = false
+                    end
+                end
+                continue
+            end
+            
+            local LeftX = bbox.Left
+            local RightX = bbox.Right
+            local TopY = bbox.Top
+            local BottomY = bbox.Bottom
+            
+            local BoxWidth = RightX - LeftX
+            local BoxHeight = BottomY - TopY
+            local BoxSize = math.max(BoxWidth, BoxHeight)
+            
+            local LineLength = math.min(math.max(BoxSize * 0.15, 5), 20)
+            local thickness = math.max(1, math.min(3, BoxSize * 0.02))
+            
+            if Settings.CornerBox then
+                lines[1].From = Vector2.new(LeftX, TopY)
+                lines[1].To = Vector2.new(LeftX + LineLength, TopY)
+                lines[1].Thickness = thickness
+                lines[1].Visible = true
+                
+                lines[2].From = Vector2.new(LeftX, TopY)
+                lines[2].To = Vector2.new(LeftX, TopY + LineLength)
+                lines[2].Thickness = thickness
+                lines[2].Visible = true
+                
+                lines[3].From = Vector2.new(RightX, TopY)
+                lines[3].To = Vector2.new(RightX - LineLength, TopY)
+                lines[3].Thickness = thickness
+                lines[3].Visible = true
+                
+                lines[4].From = Vector2.new(RightX, TopY)
+                lines[4].To = Vector2.new(RightX, TopY + LineLength)
+                lines[4].Thickness = thickness
+                lines[4].Visible = true
+                
+                lines[5].From = Vector2.new(LeftX, BottomY)
+                lines[5].To = Vector2.new(LeftX + LineLength, BottomY)
+                lines[5].Thickness = thickness
+                lines[5].Visible = true
+                
+                lines[6].From = Vector2.new(LeftX, BottomY)
+                lines[6].To = Vector2.new(LeftX, BottomY - LineLength)
+                lines[6].Thickness = thickness
+                lines[6].Visible = true
+                
+                lines[7].From = Vector2.new(RightX, BottomY)
+                lines[7].To = Vector2.new(RightX - LineLength, BottomY)
+                lines[7].Thickness = thickness
+                lines[7].Visible = true
+                
+                lines[8].From = Vector2.new(RightX, BottomY)
+                lines[8].To = Vector2.new(RightX, BottomY - LineLength)
+                lines[8].Thickness = thickness
+                lines[8].Visible = true
+            else
+                for _, line in ipairs(lines) do
+                    line.Visible = false
+                end
+            end
+            
+            if Settings.HealthBar and HealthBars[player] then
+                local HealthObjects = HealthBars[player]
+                local BarX = LeftX - 12
+                local BarWidth = 4
+                local BarHeight = BoxHeight
+                
+                local HealthPercent = Humanoid.Health / Humanoid.MaxHealth
+                HealthPercent = math.clamp(HealthPercent, 0, 1)
+                
+                local BarTop = TopY
+                local BarBottom = BottomY
+                local FillHeight = BarHeight * HealthPercent
+                local FillTop = BarBottom - FillHeight
+                
+                local Background = HealthObjects[1]
+                Background.From = Vector2.new(BarX, BarTop)
+                Background.To = Vector2.new(BarX, BarBottom)
+                Background.Thickness = BarWidth + 2
+                Background.Visible = true
+                
+                local Fill = HealthObjects[2]
+                Fill.From = Vector2.new(BarX, FillTop)
+                Fill.To = Vector2.new(BarX, BarBottom)
+                Fill.Thickness = BarWidth
+                Fill.Visible = true
+                
+                local HealthColor
+                if HealthPercent > 0.5 then
+                    HealthColor = Color3.fromRGB(0, 255, 0)
+                elseif HealthPercent > 0.25 then
+                    HealthColor = Color3.fromRGB(255, 255, 0)
+                else
+                    HealthColor = Color3.fromRGB(255, 0, 0)
+                end
+                Fill.Color = HealthColor
+            elseif HealthBars[player] then
+                for _, line in ipairs(HealthBars[player]) do
+                    line.Visible = false
+                end
+            end
+        end
+    end
+
+    -- Conectar eventos
+    game.Players.PlayerAdded:Connect(function(player)
+        if (Settings.CornerBox or Settings.HealthBar) and player ~= Player then
+            CreateESPObjects(player)
+        end
+    end)
+
+    game.Players.PlayerRemoving:Connect(function(player)
+        RemoveESPObjects(player)
+    end)
+
+    Player.CharacterAdded:Connect(function(Character)
+        local Humanoid = Character:WaitForChild("Humanoid")
+        ApplySpeed()
+        
+        task.wait(0.5)
+        if Settings.CornerBox or Settings.HealthBar then
+            for _, player in ipairs(game.Players:GetPlayers()) do
+                if player ~= Player then
+                    CreateESPObjects(player)
+                end
+            end
+        end
+    end)
+
+    Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+        UpdateFOVPosition()
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        AimbotLogic()
+        
+        if Settings.SpeedBoost then
+            local Character = Player.Character
+            if Character then
+                local Humanoid = Character:FindFirstChild("Humanoid")
+                if Humanoid and Humanoid.WalkSpeed ~= Settings.SpeedValue then
+                    Humanoid.WalkSpeed = Settings.SpeedValue
+                end
+            end
+        end
+        
+        UpdateAllESP()
+    end)
+
+    CreateFOVCircle()
+    UpdateFOVRadius()
+    UpdateFOVVisibility()
+
+    -- Aimbot Toggle
+    local AimbotToggle = PVPTab:CreateToggle({
+        Name = "Aimbot",
+        CurrentValue = false,
+        Flag = "Aimbot",
+        Callback = function(Value)
+            Settings.Aimbot = Value
+        end
+    })
+
+    -- Mostrar FOV Toggle
+    local ShowFOVToggle = PVPTab:CreateToggle({
+        Name = "Mostrar FOV",
+        CurrentValue = false,
+        Flag = "ShowFOV",
+        Callback = function(Value)
+            Settings.ShowFOV = Value
+            UpdateFOVVisibility()
+        end
+    })
+
+    -- Tamanho FOV Slider
+    local FOVSlider = PVPTab:CreateSlider({
+        Name = "Tamanho FOV",
+        Range = {1, 360},
+        Increment = 1,
+        Suffix = "",
+        CurrentValue = 140,
+        Flag = "FOVSize",
+        Callback = function(Value)
+            Settings.FOVSize = Value
+            FOVRadius = Value
+            UpdateFOVRadius()
+        end
+    })
+
+    -- Suavidade Aimbot Slider
+    local SmoothnessSlider = PVPTab:CreateSlider({
+        Name = "Suavidade Aimbot",
+        Range = {1, 10},
+        Increment = 1,
+        Suffix = "",
+        CurrentValue = 1,
+        Flag = "Smoothness",
+        Callback = function(Value)
+            Settings.Smoothness = Value
+        end
+    })
+
+    -- Player Tab Elements
+    local PlayerSection = PlayerTab:CreateSection("Movimentação")
+
+    -- Speed Boost Toggle
+    local SpeedToggle = PlayerTab:CreateToggle({
+        Name = "Speed Boost",
+        CurrentValue = false,
+        Flag = "SpeedBoost",
+        Callback = function(Value)
+            Settings.SpeedBoost = Value
+            ApplySpeed()
+        end
+    })
+
+    -- Velocidade Slider
+    local SpeedSlider = PlayerTab:CreateSlider({
+        Name = "Velocidade",
+        Range = {16, 100},
+        Increment = 1,
+        Suffix = "",
+        CurrentValue = 16,
+        Flag = "SpeedValue",
+        Callback = function(Value)
+            Settings.SpeedValue = Value
+            if Settings.SpeedBoost then
+                ApplySpeed()
+            end
+        end
+    })
+
+    -- Seção Visual (ESP Avançado)
+    local VisualSection = PlayerTab:CreateSection("Visual (ESP Avançado)")
+
+    -- Corner Box Toggle
+    local CornerBoxToggle = PlayerTab:CreateToggle({
+        Name = "Corner Box",
+        CurrentValue = false,
+        Flag = "CornerBox",
+        Callback = function(Value)
+            Settings.CornerBox = Value
+            if Value then
+                for _, player in ipairs(game.Players:GetPlayers()) do
+                    if player ~= Player then
+                        if not CornerBoxes[player] then
+                            CreateESPObjects(player)
+                        end
+                    end
+                end
+            end
+        end
+    })
+
+    -- Health Bar Toggle
+    local HealthBarToggle = PlayerTab:CreateToggle({
+        Name = "Health Bar",
+        CurrentValue = false,
+        Flag = "HealthBar",
+        Callback = function(Value)
+            Settings.HealthBar = Value
+            if Value then
+                for _, player in ipairs(game.Players:GetPlayers()) do
+                    if player ~= Player then
+                        if not HealthBars[player] then
+                            CreateESPObjects(player)
+                        end
+                    end
+                end
+            end
+        end
+    })
+
+    -- Misc Tab Elements
+    local MiscSection = MiscTab:CreateSection("Configurações")
+
+    -- Botão Destruir Interface
+    local DestroyButton = MiscTab:CreateButton({
+        Name = "Destruir Interface",
+        Callback = function()
+            ClearAllESP()
+            Window:Destroy()
+        end
+    })
+
+    -- Botão Copiar Discord
+    local CopyDiscordButton = MiscTab:CreateButton({
+        Name = "Copiar Discord",
+        Callback = function()
+            local DiscordText = "discord.gg/GSWQ3PzTHj"
+            
+            local success, err = pcall(function()
+                if setclipboard then
+                    setclipboard(DiscordText)
+                else
+                    error("setclipboard não disponível")
+                end
+            end)
+            
+            if not success then
+                pcall(function()
+                    if toclipboard then
+                        toclipboard(DiscordText)
+                    end
+                end)
+            end
+        end
+    })
+
+    -- Aplicar valores iniciais
+    local function ApplyInitialSettings()
+        Settings.Aimbot = false
+        Settings.ShowFOV = false
+        Settings.FOVSize = 140
+        Settings.Smoothness = 1
+        Settings.SpeedBoost = false
+        Settings.SpeedValue = 16
+        Settings.CornerBox = false
+        Settings.HealthBar = false
+        
+        AimbotToggle:Set(false)
+        ShowFOVToggle:Set(false)
+        FOVSlider:Set(140)
+        SmoothnessSlider:Set(1)
+        SpeedToggle:Set(false)
+        SpeedSlider:Set(16)
+        CornerBoxToggle:Set(false)
+        HealthBarToggle:Set(false)
+        
+        FOVRadius = 140
+        UpdateFOVRadius()
+        UpdateFOVVisibility()
+        UpdateFOVPosition()
+        
+        ApplySpeed()
+    end
+
+    ApplyInitialSettings()
+end
+
+-- ============================================
+-- 🖥️ TELA DE KEY (INTERFACE)
+-- ============================================
+local function criarTelaKey()
+    local keyGui = Instance.new("ScreenGui")
+    keyGui.Name = "KeyScreen"
+    keyGui.ResetOnSpawn = false
+    keyGui.Parent = LocalPlayer.PlayerGui
+
+    -- Background escuro
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(1, 0, 1, 0)
+    bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bg.BackgroundTransparency = 0.7
+    bg.Parent = keyGui
+
+    -- Frame principal
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 320, 0, 220)
+    frame.Position = UDim2.new(0.5, -160, 0.5, -110)
+    frame.BackgroundColor3 = Color3.fromRGB(20, 0, 0)
+    frame.BackgroundTransparency = 0.1
+    frame.BorderSizePixel = 3
+    frame.BorderColor3 = Color3.fromRGB(255, 0, 0)
+    frame.Parent = bg
+
+    -- Bordas arredondadas
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = frame
+
+    -- Título
+    local titulo = Instance.new("TextLabel")
+    titulo.Size = UDim2.new(1, 0, 0, 40)
+    titulo.Position = UDim2.new(0, 0, 0, 8)
+    titulo.BackgroundTransparency = 1
+    titulo.Text = "🔐 SAADX XIT"
+    titulo.TextColor3 = Color3.fromRGB(255, 0, 0)
+    titulo.TextSize = 24
+    titulo.Font = Enum.Font.GothamBold
+    titulo.TextScaled = true
+    titulo.Parent = frame
+
+    -- Subtítulo
+    local sub = Instance.new("TextLabel")
+    sub.Size = UDim2.new(1, 0, 0, 20)
+    sub.Position = UDim2.new(0, 0, 0, 48)
+    sub.BackgroundTransparency = 1
+    sub.Text = "Digite sua KEY"
+    sub.TextColor3 = Color3.fromRGB(255, 255, 255)
+    sub.TextSize = 12
+    sub.Font = Enum.Font.Gotham
+    sub.Parent = frame
+
+    -- Campo de input
+    local input = Instance.new("TextBox")
+    input.Size = UDim2.new(0.8, 0, 0, 35)
+    input.Position = UDim2.new(0.1, 0, 0, 78)
+    input.BackgroundColor3 = Color3.fromRGB(10, 0, 0)
+    input.Text = ""
+    input.TextColor3 = Color3.fromRGB(255, 255, 255)
+    input.TextSize = 16
+    input.Font = Enum.Font.GothamBold
+    input.PlaceholderText = "KEY aqui..."
+    input.PlaceholderColor3 = Color3.fromRGB(150, 0, 0)
+    input.BorderSizePixel = 2
+    input.BorderColor3 = Color3.fromRGB(255, 0, 0)
+    input.ClearTextOnFocus = true
+    input.Parent = frame
+
+    -- Label de status
+    local status = Instance.new("TextLabel")
+    status.Size = UDim2.new(1, 0, 0, 25)
+    status.Position = UDim2.new(0, 0, 0, 120)
+    status.BackgroundTransparency = 1
+    status.Text = ""
+    status.TextColor3 = Color3.fromRGB(255, 255, 255)
+    status.TextSize = 12
+    status.Font = Enum.Font.Gotham
+    status.Parent = frame
+
+    -- Botão verificar
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.35, 0, 0, 32)
+    btn.Position = UDim2.new(0.325, 0, 0, 155)
+    btn.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+    btn.Text = "✓ VERIFICAR"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextSize = 14
+    btn.Font = Enum.Font.GothamBold
+    btn.BorderSizePixel = 0
+    btn.Parent = frame
+
+    -- Função para processar a key
+    local function processar()
+        local key = input.Text
+        if key == "" then
+            status.Text = "❌ Digite uma KEY!"
+            status.TextColor3 = Color3.fromRGB(255, 200, 0)
+            return
+        end
+        local valida, msg = verificarKey(key)
+        status.Text = msg
+        status.TextColor3 = valida and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+        if valida then
+            keyValidada = true
+            task.wait(0.5)
+            keyGui:Destroy()
+            criarMenu() -- Agora a função já foi definida acima
+        end
+    end
+
+    -- Eventos do botão e input
+    btn.Activated:Connect(processar)
+    input.FocusLost:Connect(function(enter) if enter then processar() end end)
+end
+
+-- ============================================
+-- 🚀 EXECUTAR A TELA DE KEY
+-- ============================================
+criarTelaKey()
