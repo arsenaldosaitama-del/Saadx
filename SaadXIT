@@ -6,6 +6,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local KeysValidas = {
     ["SAADX-78WB9UG4KTQWTUX0"] = "18/08/2026",
+    ["SAADX-WXUVGDNIT0FCODY1"] = "19/08/2026",
 }
 
 local keyValidada = false
