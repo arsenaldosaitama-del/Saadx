@@ -5,8 +5,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 -- ============================================
 
 local KeysValidas = {
-    ["SAADX-78WB9UG4KTQWTUX0"] = "18/08/2026",
-    ["SAADX-WXUVGDNIT0FCODY1"] = "19/08/2026",
+    ["SAADX-78WB9UG4KTQWTUX0"] = "30/08/2026",
 }
 
 local keyValidada = false
@@ -91,6 +90,11 @@ local function criarMenu()
     local CreateESPObjects
     local ClearAllESP
     local UpdateAllESP
+
+    -- Variáveis para gerenciar conexões
+    local connections = {}
+    local renderSteppedConnection = nil
+    local isDestroying = false
 
     -- Criar círculo FOV 2D
     local function CreateFOVCircle()
@@ -567,18 +571,96 @@ local function criarMenu()
         end
     end
 
+    -- ============================================
+    -- FUNÇÃO DE DESTRUIÇÃO CORRIGIDA
+    -- ============================================
+    local function DestroyInterface()
+        if isDestroying then return end
+        isDestroying = true
+
+        -- Desativar funcionalidades antes de remover a interface
+        Settings.Aimbot = false
+        Settings.ShowFOV = false
+        Settings.SpeedBoost = false
+        Settings.CornerBox = false
+        Settings.HealthBar = false
+
+        -- Restaurar velocidade
+        local character = Player.Character
+        local humanoid = character and character:FindFirstChild("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = 16
+        end
+
+        -- Remover objetos Drawing
+        pcall(function()
+            if FOVCircle then
+                FOVCircle:Remove()
+                FOVCircle = nil
+            end
+        end)
+
+        pcall(function()
+            ClearAllESP()
+            CornerBoxes = {}
+            HealthBars = {}
+        end)
+
+        -- Parar conexões do script
+        for _, conn in ipairs(connections) do
+            pcall(function()
+                if conn then
+                    conn:Disconnect()
+                end
+            end)
+        end
+        connections = {}
+
+        if renderSteppedConnection then
+            pcall(function()
+                renderSteppedConnection:Disconnect()
+            end)
+            renderSteppedConnection = nil
+        end
+
+        -- O método de destruição deve ser chamado no Rayfield,
+        -- não apenas na janela criada.
+        local destroyed = pcall(function()
+            Rayfield:Destroy()
+        end)
+
+        -- Fallback: remover apenas GUIs pertencentes ao Rayfield/SaadXit
+        if not destroyed then
+            pcall(function()
+                local playerGui = Player:FindFirstChildOfClass("PlayerGui")
+                if playerGui then
+                    for _, gui in ipairs(playerGui:GetChildren()) do
+                        if gui:IsA("ScreenGui") then
+                            local name = gui.Name:lower()
+                            if name:find("rayfield") or name:find("saadx") then
+                                gui:Destroy()
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
     -- Conectar eventos
-    game.Players.PlayerAdded:Connect(function(player)
+    local conn1 = game.Players.PlayerAdded:Connect(function(player)
         if (Settings.CornerBox or Settings.HealthBar) and player ~= Player then
             CreateESPObjects(player)
         end
     end)
+    table.insert(connections, conn1)
 
-    game.Players.PlayerRemoving:Connect(function(player)
+    local conn2 = game.Players.PlayerRemoving:Connect(function(player)
         RemoveESPObjects(player)
     end)
+    table.insert(connections, conn2)
 
-    Player.CharacterAdded:Connect(function(Character)
+    local conn3 = Player.CharacterAdded:Connect(function(Character)
         local Humanoid = Character:WaitForChild("Humanoid")
         ApplySpeed()
         
@@ -591,25 +673,29 @@ local function criarMenu()
             end
         end
     end)
+    table.insert(connections, conn3)
 
-    Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    local conn4 = Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
         UpdateFOVPosition()
     end)
+    table.insert(connections, conn4)
 
-    RunService.RenderStepped:Connect(function()
-        AimbotLogic()
-        
-        if Settings.SpeedBoost then
-            local Character = Player.Character
-            if Character then
-                local Humanoid = Character:FindFirstChild("Humanoid")
-                if Humanoid and Humanoid.WalkSpeed ~= Settings.SpeedValue then
-                    Humanoid.WalkSpeed = Settings.SpeedValue
+    renderSteppedConnection = RunService.RenderStepped:Connect(function()
+        if not isDestroying then
+            AimbotLogic()
+            
+            if Settings.SpeedBoost then
+                local Character = Player.Character
+                if Character then
+                    local Humanoid = Character:FindFirstChild("Humanoid")
+                    if Humanoid and Humanoid.WalkSpeed ~= Settings.SpeedValue then
+                        Humanoid.WalkSpeed = Settings.SpeedValue
+                    end
                 end
             end
+            
+            UpdateAllESP()
         end
-        
-        UpdateAllESP()
     end)
 
     CreateFOVCircle()
@@ -739,12 +825,11 @@ local function criarMenu()
     -- Misc Tab Elements
     local MiscSection = MiscTab:CreateSection("Configurações")
 
-    -- Botão Destruir Interface
+    -- Botão Destruir Interface (CORRIGIDO DEFINITIVAMENTE)
     local DestroyButton = MiscTab:CreateButton({
         Name = "Destruir Interface",
         Callback = function()
-            ClearAllESP()
-            Window:Destroy()
+            DestroyInterface()
         end
     })
 
@@ -911,7 +996,7 @@ local function criarTelaKey()
             keyValidada = true
             task.wait(0.5)
             keyGui:Destroy()
-            criarMenu() -- Agora a função já foi definida acima
+            criarMenu()
         end
     end
 
